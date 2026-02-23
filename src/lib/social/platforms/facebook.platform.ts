@@ -211,59 +211,76 @@ export class FacebookPlatform implements ISocialPlatform {
     let reach = 0;
     let engagedUsers = 0;
 
-    // Try Page post insights (correct metric names with post_ prefix)
-    try {
-      const fields =
-        "post_impressions,post_impressions_unique,post_engaged_users,post_clicks,post_reactions_by_type_total";
-      const res = await fetch(
-        `${META_API_BASE}/${postId}/insights?metric=${fields}&access_token=${accessToken}`
-      );
-      const data = await res.json();
+    // Determine if this is a Page post (PAGEID_POSTID) or standalone (Photo/Video)
+    const isPagePost = postId.includes("_");
 
-      if (data.error) {
-        console.log(
-          `[FB Metrics] Insights error for ${postId}:`,
-          data.error.message,
-          `(code: ${data.error.code}, subcode: ${data.error.error_subcode})`
+    // Try Page post insights (only works for page feed posts, not photos/videos)
+    if (isPagePost) {
+      try {
+        const fields =
+          "post_impressions,post_impressions_unique,post_engaged_users";
+        const res = await fetch(
+          `${META_API_BASE}/${postId}/insights?metric=${fields}&access_token=${accessToken}`
         );
-      } else if (data.data) {
-        const metrics: Record<string, number> = {};
-        for (const item of data.data) {
-          // Handle both simple values and object values (reactions)
-          const val = item.values?.[0]?.value;
-          if (typeof val === "number") {
-            metrics[item.name] = val;
-          } else if (typeof val === "object" && val !== null) {
-            // post_reactions_by_type_total returns { like: N, love: N, ... }
-            metrics[item.name] = Object.values(val).reduce(
-              (sum: number, v) => sum + (typeof v === "number" ? v : 0),
-              0
-            );
+        const data = await res.json();
+
+        if (data.error) {
+          console.log(
+            `[FB Metrics] Insights error for ${postId}:`,
+            data.error.message,
+            `(code: ${data.error.code})`
+          );
+        } else if (data.data) {
+          const metrics: Record<string, number> = {};
+          for (const item of data.data) {
+            const val = item.values?.[0]?.value;
+            if (typeof val === "number") {
+              metrics[item.name] = val;
+            } else if (typeof val === "object" && val !== null) {
+              metrics[item.name] = Object.values(val).reduce(
+                (sum: number, v) => sum + (typeof v === "number" ? v : 0),
+                0
+              );
+            }
           }
+          impressions = metrics.post_impressions ?? 0;
+          reach = metrics.post_impressions_unique ?? 0;
+          engagedUsers = metrics.post_engaged_users ?? 0;
+          console.log(
+            `[FB Metrics] Insights for ${postId}: impressions=${impressions}, reach=${reach}, engaged=${engagedUsers}`
+          );
         }
-        impressions = metrics.post_impressions ?? 0;
-        reach = metrics.post_impressions_unique ?? 0;
-        engagedUsers = metrics.post_engaged_users ?? 0;
+      } catch (err) {
         console.log(
-          `[FB Metrics] Insights for ${postId}: impressions=${impressions}, reach=${reach}, engaged=${engagedUsers}`
+          `[FB Metrics] Insights fetch failed for ${postId}:`,
+          err instanceof Error ? err.message : err
         );
       }
-    } catch (err) {
-      console.log(
-        `[FB Metrics] Insights fetch failed for ${postId}:`,
-        err instanceof Error ? err.message : err
-      );
     }
 
-    // Fetch social engagement (reactions, comments, shares) from the post object
+    // Fetch social engagement — try with shares first, fallback without for Photo nodes
     let likes = 0;
     let comments = 0;
     let shares = 0;
     try {
-      const socialRes = await fetch(
-        `${META_API_BASE}/${postId}?fields=reactions.limit(0).summary(true),comments.limit(0).summary(true),shares&access_token=${accessToken}`
+      // Page posts support shares, Photos do not
+      const fieldsWithShares = "reactions.limit(0).summary(true),comments.limit(0).summary(true),shares";
+      const fieldsNoShares = "reactions.limit(0).summary(true),comments.limit(0).summary(true)";
+
+      let socialRes = await fetch(
+        `${META_API_BASE}/${postId}?fields=${isPagePost ? fieldsWithShares : fieldsNoShares}&access_token=${accessToken}`
       );
-      const socialData = await socialRes.json();
+      let socialData = await socialRes.json();
+
+      // If shares field fails, retry without it
+      if (socialData.error?.message?.includes("nonexisting field")) {
+        console.log(`[FB Metrics] Retrying ${postId} without shares field`);
+        socialRes = await fetch(
+          `${META_API_BASE}/${postId}?fields=${fieldsNoShares}&access_token=${accessToken}`
+        );
+        socialData = await socialRes.json();
+      }
+
       if (socialData.error) {
         console.log(
           `[FB Metrics] Social counts error for ${postId}:`,

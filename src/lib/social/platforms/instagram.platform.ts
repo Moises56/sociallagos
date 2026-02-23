@@ -35,7 +35,6 @@ export class InstagramPlatform implements ISocialPlatform {
     // instagram_manage_insights) require App Review.
     const scopes = [
       "public_profile",
-      "instagram_basic",
       "pages_show_list",
       "pages_read_engagement",
     ].join(",");
