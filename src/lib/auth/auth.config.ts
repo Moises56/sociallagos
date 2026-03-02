@@ -1,10 +1,23 @@
 import type { NextAuthConfig } from "next-auth";
 
+const useSecureCookies = process.env.NODE_ENV === "production";
+
 export const authConfig: NextAuthConfig = {
   trustHost: true,
   pages: {
     signIn: "/login",
     newUser: "/dashboard",
+  },
+  cookies: {
+    sessionToken: {
+      name: "__session",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: useSecureCookies,
+      },
+    },
   },
   callbacks: {
     authorized({ auth, request: { nextUrl } }) {

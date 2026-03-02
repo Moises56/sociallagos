@@ -1,0 +1,16 @@
+{
+  "hosting": {
+    "site": "socialforge",
+    "public": "public_firebase",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "rewrites": [
+      {
+        "source": "**",
+        "run": {
+          "serviceId": "sociallagos-git",
+          "region": "us-central1"
+        }
+      }
+    ]
+  }
+}
