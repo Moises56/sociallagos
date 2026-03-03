@@ -36,6 +36,7 @@ export class FacebookPlatform implements ISocialPlatform {
       "pages_show_list",
       "pages_read_engagement",
       "pages_manage_posts",
+      "read_insights",
     ].join(",");
 
     const url =
@@ -258,39 +259,53 @@ export class FacebookPlatform implements ISocialPlatform {
       }
     }
 
-    // Fetch social engagement — try with shares first, fallback without for Photo nodes
+    // Fetch social engagement with progressive fallback:
+    // 1. reactions + comments + shares (page posts)
+    // 2. reactions + comments (photos)
+    // 3. likes + comments (reels/videos that don't support reactions)
     let likes = 0;
     let comments = 0;
     let shares = 0;
     try {
-      // Page posts support shares, Photos do not
-      const fieldsWithShares = "reactions.limit(0).summary(true),comments.limit(0).summary(true),shares";
-      const fieldsNoShares = "reactions.limit(0).summary(true),comments.limit(0).summary(true)";
+      const fieldSets = isPagePost
+        ? [
+            "reactions.limit(0).summary(true),comments.limit(0).summary(true),shares",
+            "reactions.limit(0).summary(true),comments.limit(0).summary(true)",
+            "likes.limit(0).summary(true),comments.limit(0).summary(true)",
+          ]
+        : [
+            "reactions.limit(0).summary(true),comments.limit(0).summary(true)",
+            "likes.limit(0).summary(true),comments.limit(0).summary(true)",
+          ];
 
-      let socialRes = await fetch(
-        `${META_API_BASE}/${postId}?fields=${isPagePost ? fieldsWithShares : fieldsNoShares}&access_token=${accessToken}`
-      );
-      let socialData = await socialRes.json();
-
-      // If shares field fails, retry without it
-      if (socialData.error?.message?.includes("nonexisting field")) {
-        console.log(`[FB Metrics] Retrying ${postId} without shares field`);
-        socialRes = await fetch(
-          `${META_API_BASE}/${postId}?fields=${fieldsNoShares}&access_token=${accessToken}`
+      let socialData: Record<string, unknown> = {};
+      for (const fields of fieldSets) {
+        const socialRes = await fetch(
+          `${META_API_BASE}/${postId}?fields=${fields}&access_token=${accessToken}`
         );
         socialData = await socialRes.json();
+
+        if (!(socialData as { error?: unknown }).error) break;
+
+        const errMsg = ((socialData as { error?: { message?: string } }).error?.message) ?? "";
+        console.log(`[FB Metrics] Fields "${fields}" failed for ${postId}: ${errMsg}`);
+
+        // Only retry on "nonexisting field" errors; permission errors won't fix with different fields
+        if (!errMsg.includes("nonexisting field")) break;
       }
 
-      if (socialData.error) {
+      if ((socialData as { error?: { message?: string } }).error) {
         console.log(
           `[FB Metrics] Social counts error for ${postId}:`,
-          socialData.error.message,
-          `(code: ${socialData.error.code})`
+          (socialData as { error?: { message?: string } }).error?.message,
         );
       } else {
-        likes = socialData.reactions?.summary?.total_count ?? 0;
-        comments = socialData.comments?.summary?.total_count ?? 0;
-        shares = socialData.shares?.count ?? 0;
+        // reactions or likes — whichever is available
+        const reactionsCount = (socialData as { reactions?: { summary?: { total_count?: number } } }).reactions?.summary?.total_count;
+        const likesCount = (socialData as { likes?: { summary?: { total_count?: number } } }).likes?.summary?.total_count;
+        likes = reactionsCount ?? likesCount ?? 0;
+        comments = (socialData as { comments?: { summary?: { total_count?: number } } }).comments?.summary?.total_count ?? 0;
+        shares = (socialData as { shares?: { count?: number } }).shares?.count ?? 0;
         console.log(
           `[FB Metrics] Social for ${postId}: likes=${likes}, comments=${comments}, shares=${shares}`
         );
