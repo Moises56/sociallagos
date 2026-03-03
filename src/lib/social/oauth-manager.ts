@@ -57,15 +57,15 @@ export async function completeOAuth(
   const targetWatchMinutes =
     "watchMinutes60d" in requirements ? requirements.watchMinutes60d : 600000;
 
-  // Upsert social account
+  // Upsert social account (match by platform+platformAccountId to avoid duplicate key errors)
   const socialAccount = await SocialAccount.findOneAndUpdate(
     {
-      userId,
       platform,
       platformAccountId: account.platformAccountId,
     },
     {
       $set: {
+        userId,
         accountName: account.accountName,
         accountType: account.accountType,
         avatarUrl: account.avatarUrl,
