@@ -36,7 +36,6 @@ export class FacebookPlatform implements ISocialPlatform {
       "pages_show_list",
       "pages_read_engagement",
       "pages_manage_posts",
-      "read_insights",
     ].join(",");
 
     const url =
