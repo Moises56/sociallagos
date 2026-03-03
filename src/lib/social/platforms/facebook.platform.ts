@@ -117,12 +117,27 @@ export class FacebookPlatform implements ISocialPlatform {
     );
     const pagesData = await pagesRes.json();
 
+    console.log(
+      `[FB getAccount] /me/accounts response:`,
+      JSON.stringify({
+        error: pagesData.error ?? null,
+        dataLength: pagesData.data?.length ?? 0,
+        pages: pagesData.data?.map((p: { id: string; name: string }) => ({
+          id: p.id,
+          name: p.name,
+        })),
+      })
+    );
+
     if (pagesData.error) {
       throw new PlatformError("facebook", pagesData.error.message);
     }
 
     const page = pagesData.data?.[0];
     if (page) {
+      console.log(
+        `[FB getAccount] Using page: id=${page.id}, name=${page.name}, hasPageToken=${!!page.access_token}`
+      );
       return {
         platformAccountId: page.id,
         accountName: page.name,
@@ -132,22 +147,12 @@ export class FacebookPlatform implements ISocialPlatform {
       };
     }
 
-    // No pages found - connect with user profile instead
-    const profileRes = await fetch(
-      `${META_API_BASE}/me?fields=id,name,picture.width(200)&access_token=${accessToken}`
+    // No pages found — require a Facebook Page for proper API functionality
+    console.log(`[FB getAccount] No pages found — cannot connect profile-only accounts`);
+    throw new PlatformError(
+      "facebook",
+      "No se encontraron Páginas de Facebook. SocialForge requiere una Página para publicar. Crea una en facebook.com/pages/create y vuelve a conectar."
     );
-    const profile = await profileRes.json();
-
-    if (profile.error) {
-      throw new PlatformError("facebook", profile.error.message);
-    }
-
-    return {
-      platformAccountId: profile.id,
-      accountName: profile.name + " (perfil)",
-      accountType: "profile",
-      avatarUrl: profile.picture?.data?.url,
-    };
   }
 
   async publishContent(
