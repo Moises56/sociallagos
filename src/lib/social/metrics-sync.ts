@@ -124,6 +124,12 @@ export async function syncPostMetrics(
     );
     result.discovered += discovered;
 
+    // Step 1.5: Fix orphaned publications (wrong userId from previous sessions)
+    await Publication.updateMany(
+      { socialAccountId: account._id, userId: { $ne: userId } },
+      { $set: { userId } }
+    );
+
     // Step 2: Sync metrics for ALL known publications (including newly discovered)
     const publications = await Publication.find({
       socialAccountId: account._id,

@@ -48,7 +48,6 @@ export async function GET(request: Request) {
 
     const [publications, snapshots] = await Promise.all([
       Publication.find({
-        userId: session.user.id,
         socialAccountId: { $in: accountIds },
         status: "published",
         publishedAt: { $gte: since },
