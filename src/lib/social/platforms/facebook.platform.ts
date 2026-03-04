@@ -185,11 +185,14 @@ export class FacebookPlatform implements ISocialPlatform {
       })
     );
 
+    // If /me/accounts errors (e.g. when using a page token), fall through to detection
     if (pagesData.error) {
-      throw new PlatformError("facebook", pagesData.error.message);
+      console.log(
+        `[FB getAccount] /me/accounts error (expected for page tokens): ${pagesData.error.message}`
+      );
     }
 
-    const page = pagesData.data?.[0];
+    const page = !pagesData.error ? pagesData.data?.[0] : undefined;
     if (page) {
       console.log(
         `[FB getAccount] Using page: id=${page.id}, name=${page.name}, hasPageToken=${!!page.access_token}`
