@@ -206,8 +206,10 @@ export class FacebookPlatform implements ISocialPlatform {
     // /me/accounts returned empty — token might already be a page access token
     // (happens when handleCallback exchanged a page token for long-lived)
     console.log(`[FB getAccount] /me/accounts empty, trying /me as page token fallback`);
+
+    // First get basic profile info (safe fields that work for both pages and profiles)
     const meRes = await fetch(
-      `${META_API_BASE}/me?fields=id,name,category,picture.width(200)&access_token=${accessToken}`
+      `${META_API_BASE}/me?fields=id,name,picture.width(200)&access_token=${accessToken}`
     );
     const meData = await meRes.json();
 
@@ -215,11 +217,23 @@ export class FacebookPlatform implements ISocialPlatform {
       throw new PlatformError("facebook", meData.error.message);
     }
 
-    // Pages have a 'category' field, personal profiles don't
-    if (meData.category) {
-      console.log(
-        `[FB getAccount] Token is a page token: id=${meData.id}, name=${meData.name}, category=${meData.category}`
+    // Detect if this is a page by trying to fetch page-specific field (category)
+    // This call may fail for profiles — that's expected
+    let isPage = false;
+    try {
+      const typeRes = await fetch(
+        `${META_API_BASE}/${meData.id}?fields=category&access_token=${accessToken}`
       );
+      const typeData = await typeRes.json();
+      isPage = !typeData.error && !!typeData.category;
+      console.log(
+        `[FB getAccount] Page detection for ${meData.id}: isPage=${isPage}, category=${typeData.category ?? "N/A"}`
+      );
+    } catch {
+      console.log(`[FB getAccount] Page detection failed for ${meData.id}`);
+    }
+
+    if (isPage) {
       return {
         platformAccountId: meData.id,
         accountName: meData.name,
@@ -229,7 +243,9 @@ export class FacebookPlatform implements ISocialPlatform {
     }
 
     // It's a personal profile — not supported for publishing
-    console.log(`[FB getAccount] No pages found and token is a profile token — cannot connect`);
+    console.log(
+      `[FB getAccount] No pages found and token is for profile ${meData.id} (${meData.name}) — cannot connect`
+    );
     throw new PlatformError(
       "facebook",
       "No se encontraron Páginas de Facebook. SocialForge requiere una Página para publicar. Crea una en facebook.com/pages/create y vuelve a conectar."
