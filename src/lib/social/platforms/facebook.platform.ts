@@ -207,7 +207,7 @@ export class FacebookPlatform implements ISocialPlatform {
     // (happens when handleCallback exchanged a page token for long-lived)
     console.log(`[FB getAccount] /me/accounts empty, trying /me as page token fallback`);
 
-    // First get basic profile info (safe fields that work for both pages and profiles)
+    // Get basic info (safe fields that work for both pages and profiles)
     const meRes = await fetch(
       `${META_API_BASE}/me?fields=id,name,picture.width(200)&access_token=${accessToken}`
     );
@@ -217,20 +217,29 @@ export class FacebookPlatform implements ISocialPlatform {
       throw new PlatformError("facebook", meData.error.message);
     }
 
-    // Detect if this is a page by trying to fetch page-specific field (category)
-    // This call may fail for profiles — that's expected
+    // Detect if this is a page by trying page-specific fields
+    // Try multiple fields since "New Pages Experience" may not support all of them
     let isPage = false;
-    try {
-      const typeRes = await fetch(
-        `${META_API_BASE}/${meData.id}?fields=category&access_token=${accessToken}`
-      );
-      const typeData = await typeRes.json();
-      isPage = !typeData.error && !!typeData.category;
-      console.log(
-        `[FB getAccount] Page detection for ${meData.id}: isPage=${isPage}, category=${typeData.category ?? "N/A"}`
-      );
-    } catch {
-      console.log(`[FB getAccount] Page detection failed for ${meData.id}`);
+    const pageFields = ["fan_count", "category", "category_list"];
+    for (const field of pageFields) {
+      try {
+        const typeRes = await fetch(
+          `${META_API_BASE}/${meData.id}?fields=${field}&access_token=${accessToken}`
+        );
+        const typeData = await typeRes.json();
+        if (!typeData.error) {
+          isPage = true;
+          console.log(
+            `[FB getAccount] Page detected via '${field}' for ${meData.id} (${meData.name})`
+          );
+          break;
+        }
+        console.log(
+          `[FB getAccount] Field '${field}' unavailable for ${meData.id}: ${typeData.error?.message}`
+        );
+      } catch {
+        // Continue to next field
+      }
     }
 
     if (isPage) {
